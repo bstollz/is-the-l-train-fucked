@@ -119,9 +119,9 @@ async function getLTrainStatus(): Promise<TrainStatus> {
     console.log(`[MTA] ${lAlerts.length} unplanned L alert(s) after filtering`);
 
     // Decide the overall status based on how many unplanned alerts remain.
+    // KINDA is reserved for the error fallback only (can't reach MTA feed).
     const count = lAlerts.length;
-    const status: Status =
-      count === 0 ? "NOPE" : count <= 2 ? "KINDA" : "YES";
+    const status: Status = count === 0 ? "NOPE" : "YES";
 
     // Pick a random fun fact (only shown when status is NOPE).
     const funFact =
@@ -162,20 +162,20 @@ const STATUS_STYLES: Record<
   YES: {
     bg: "#cc0000",
     textColor: "#ffffff",
-    headline: "YES.",
-    subheading: "The L train is fucked.",
+    headline: "YUP.",
+    subheading: "The L train is fucked. Here's what's happening:",
   },
   KINDA: {
     bg: "#e07000",
     textColor: "#ffffff",
     headline: "KINDA.",
-    subheading: "There are delays. Ish. Plan accordingly.",
+    subheading: "The L train may or may not be fucked. We're having trouble fetching data.",
   },
   NOPE: {
     bg: "#007a33",
     textColor: "#ffffff",
     headline: "NOPE.",
-    subheading: "No active alerts. Safe travels.",
+    subheading: "The L train is not fucked. Safe travels. Here's a fun fact for your journey:",
   },
 };
 
@@ -189,6 +189,12 @@ export default async function Home() {
 
   // Get the visual config for the current status.
   const style = STATUS_STYLES[status];
+
+  // For YES with only 1-2 alerts, use a softer subheading.
+  const subheading =
+    status === "YES" && alerts.length <= 2
+      ? "The L train is a little fucked."
+      : style.subheading;
 
   return (
     // Full-page colored background — color changes based on status
@@ -244,7 +250,7 @@ export default async function Home() {
           opacity: 0.9,
         }}
       >
-        {style.subheading}
+        {subheading}
       </p>
 
       {/* Fun fact — only shows when everything is fine */}
