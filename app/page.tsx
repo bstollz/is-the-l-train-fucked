@@ -211,8 +211,31 @@ export default async function Home() {
         fontFamily: "monospace",
         padding: "2rem",
         boxSizing: "border-box",
+        position: "relative",
       }}
     >
+      {/* Logo — top-left header */}
+      <header style={{ position: "absolute", top: "1.5rem", left: "1.5rem" }}>
+        <a href="/" aria-label="Is the L Train Fucked? — home">
+          <svg
+            viewBox="0 0 680 400"
+            xmlns="http://www.w3.org/2000/svg"
+            style={{ width: "200px", display: "block" }}
+          >
+            <rect x="40" y="60" width="600" height="280" rx="24" fill="#1a1a1a"/>
+            <rect x="40" y="60" width="600" height="8" rx="4" fill="#A7A9AC"/>
+            <rect x="40" y="332" width="600" height="8" rx="4" fill="#A7A9AC"/>
+            <circle cx="160" cy="200" r="68" fill="#A7A9AC"/>
+            <text x="160" y="200" textAnchor="middle" dominantBaseline="central" fontFamily="Helvetica Neue, Helvetica, Arial, sans-serif" fontSize="80" fontWeight="700" fill="#1a1a1a">L</text>
+            <line x1="254" y1="110" x2="254" y2="290" stroke="#A7A9AC" strokeWidth="1" opacity="0.3"/>
+            <text x="284" y="158" dominantBaseline="central" fontFamily="Helvetica Neue, Helvetica, Arial, sans-serif" fontSize="22" fontWeight="400" fill="#A7A9AC" letterSpacing="6">IS THE</text>
+            <text x="284" y="198" dominantBaseline="central" fontFamily="Helvetica Neue, Helvetica, Arial, sans-serif" fontSize="42" fontWeight="700" fill="#ffffff" letterSpacing="4">L TRAIN</text>
+            <text x="284" y="240" dominantBaseline="central" fontFamily="Helvetica Neue, Helvetica, Arial, sans-serif" fontSize="42" fontWeight="700" fill="#A7A9AC" letterSpacing="4">FUCKED?</text>
+            <text x="284" y="308" dominantBaseline="central" fontFamily="Helvetica Neue, Helvetica, Arial, sans-serif" fontSize="15" fontWeight="400" fill="#A7A9AC" letterSpacing="2" opacity="0.7">#LTrain.WTF</text>
+          </svg>
+        </a>
+      </header>
+
       {/* Site title */}
       <h1
         style={{
