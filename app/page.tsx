@@ -130,7 +130,8 @@ async function getLTrainStatus(): Promise<TrainStatus> {
     return {
       status,
       alerts: lAlerts,
-      lastUpdated: new Date().toLocaleTimeString("en-US", { timeZone: "America/New_York" }, {
+      lastUpdated: new Date().toLocaleTimeString("en-US", {
+        timeZone: "America/New_York",
         hour: "numeric",
         minute: "2-digit",
       }),
