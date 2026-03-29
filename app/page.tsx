@@ -198,27 +198,21 @@ export default async function Home() {
       : style.subheading;
 
   return (
-    // Full-page colored background — color changes based on status
-    <main
-      style={{
-        backgroundColor: style.bg,
-        color: style.textColor,
-        minHeight: "100vh",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        fontFamily: "monospace",
-        padding: "2rem",
-        boxSizing: "border-box",
-        position: "relative",
-      }}
-    >
-      {/* Logo — top-left header */}
-      <header style={{ position: "absolute", top: "1.5rem", left: "1.5rem" }}>
+    <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+      {/* Full-width header bar — in normal document flow */}
+      <header
+        style={{
+          backgroundColor: "#1a1a1a",
+          display: "flex",
+          alignItems: "center",
+          padding: "0.5rem 1.5rem",
+          width: "100%",
+          boxSizing: "border-box",
+        }}
+      >
         <a href="/" aria-label="Is the L Train Fucked? — home">
           <svg
-            viewBox="0 0 680 400"
+            viewBox="40 60 600 280"
             xmlns="http://www.w3.org/2000/svg"
             style={{ width: "200px", display: "block" }}
           >
@@ -236,6 +230,21 @@ export default async function Home() {
         </a>
       </header>
 
+      {/* Colored content area — fills remaining viewport height */}
+      <main
+        style={{
+          backgroundColor: style.bg,
+          color: style.textColor,
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          fontFamily: "monospace",
+          padding: "2rem",
+          boxSizing: "border-box",
+        }}
+      >
       {/* Site title */}
       <h1
         style={{
@@ -347,5 +356,6 @@ export default async function Home() {
         Last updated: {lastUpdated} · live MTA data
       </p>
     </main>
+    </div>
   );
 }
