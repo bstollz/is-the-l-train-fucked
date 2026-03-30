@@ -17,6 +17,9 @@
 import { transit_realtime } from "gtfs-realtime-bindings";
 import { FUN_FACTS } from "./lib/funFacts";
 
+// force-dynamic ensures Next.js never statically renders this page at build
+// time. Every request runs this file fresh on the server, so users are never
+// served a stale HTML snapshot from a previous deploy.
 export const dynamic = "force-dynamic";
 
 // ---------------------------------------------------------------------------
@@ -33,29 +36,52 @@ interface Alert {
 interface TrainStatus {
   status: Status;
   alerts: Alert[];
-  lastUpdated: string;      // formatted time string, e.g. "3:45 PM"
-  funFact: string;          // random fact, shown only when status is NOPE
+  lastUpdated: string;  // formatted time string, e.g. "3:45 PM"
+  funFact: string;      // random fact, shown only when status is NOPE
 }
+
+// ---------------------------------------------------------------------------
+// Server-side in-memory cache — 60-second TTL
+// ---------------------------------------------------------------------------
+// force-dynamic re-renders the page on every request, which is correct for
+// freshness. But without any fetch-level caching, every visitor fires a
+// separate HTTP request to the MTA API — which could trigger rate limiting
+// under load. This module-level cache deduplicates those calls: the first
+// request in a 60-second window hits the MTA; every subsequent request in
+// that window gets the already-parsed result instantly.
+//
+// Trade-off: in a serverless environment (Vercel) each function instance has
+// its own memory, so this is per-instance deduplication, not a global shared
+// cache. It still dramatically reduces MTA API traffic during traffic spikes.
+const CACHE_TTL_MS = 60_000;
+let _cache: { data: TrainStatus; expiresAt: number } | null = null;
 
 // ---------------------------------------------------------------------------
 // Data fetching — runs on the server, never exposed to the browser
 // ---------------------------------------------------------------------------
 
 async function getLTrainStatus(): Promise<TrainStatus> {
+  // Return cached result if it's still fresh.
+  if (_cache && Date.now() < _cache.expiresAt) {
+    console.log("[MTA] serving from server-side cache");
+    return _cache.data;
+  }
+
   try {
     // Fetch the MTA subway alerts feed (covers all lines).
     // This is a binary protobuf file — not JSON, not HTML.
     // We filter below to only keep alerts for the L train (route_id "L").
+    //
+    // No fetch-level cache option is set here because force-dynamic already
+    // disables Next.js's fetch cache for this route. Caching is handled by
+    // the module-level _cache above, giving us a controlled 60-second TTL.
     const res = await fetch(
       "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/camsys%2Fsubway-alerts",
       {
-        // Don't cache this — we want fresh data on every page load.
-        // If your site gets lots of traffic, change to: { next: { revalidate: 60 } }
-        cache: "no-store",
         headers: {
           // Some MTA endpoints block requests without a User-Agent.
-          // x-api-key can be left empty for public feeds; add a real key here
-          // if you register at https://api.mta.info/ for higher rate limits.
+          // x-api-key can be left blank for public feeds; register at
+          // https://api.mta.info/ for a key with higher rate limits.
           "x-api-key": "",
           "User-Agent": "Mozilla/5.0",
         },
@@ -63,18 +89,14 @@ async function getLTrainStatus(): Promise<TrainStatus> {
     );
 
     if (!res.ok) {
-      // Log the status code AND the response body text so we can see
-      // exactly what the MTA server is saying (e.g. "Unauthorized", "Forbidden").
       const body = await res.text();
       throw new Error(
         `MTA feed returned HTTP ${res.status} ${res.statusText} — body: ${body}`
       );
     }
 
-    // Read the response as a raw binary buffer.
+    // Read the response as a raw binary buffer and decode the protobuf.
     const buffer = await res.arrayBuffer();
-
-    // Decode the protobuf binary into a JavaScript object using gtfs-realtime-bindings.
     const feed = transit_realtime.FeedMessage.decode(new Uint8Array(buffer));
 
     // Pull out every entity that mentions the L train (route_id "L").
@@ -82,66 +104,57 @@ async function getLTrainStatus(): Promise<TrainStatus> {
       e.alert?.informedEntity?.some((ie) => ie.routeId === "L")
     );
 
-    // Log every raw L alert to the terminal so we can inspect what the MTA
-    // is actually sending. Look for this output in the `npm run dev` window.
     console.log(`[MTA] ${allLEntities.length} total L alert(s) in feed:`);
     for (const e of allLEntities) {
-      const cause = e.alert?.cause;   // numeric — see Cause enum below
-      const effect = e.alert?.effect; // numeric — see Effect enum below
+      const cause = e.alert?.cause;
+      const effect = e.alert?.effect;
       const msg = e.alert?.headerText?.translation?.[0]?.text ?? "(no text)";
-      // Cause: 1=UNKNOWN 2=OTHER 3=TECHNICAL_PROBLEM 4=STRIKE 5=DEMONSTRATION
-      //        6=ACCIDENT 7=HOLIDAY 8=WEATHER 9=MAINTENANCE 10=CONSTRUCTION
-      //        11=POLICE_ACTIVITY 12=MEDICAL_EMERGENCY
-      // Effect: 1=NO_SERVICE 2=REDUCED_SERVICE 3=SIGNIFICANT_DELAYS 4=DETOUR
-      //         5=ADDITIONAL_SERVICE 6=MODIFIED_SERVICE 7=OTHER_EFFECT
-      //         8=UNKNOWN_EFFECT 9=STOP_MOVED 10=NO_EFFECT 11=ACCESSIBILITY_ISSUE
       console.log(`  id=${e.id} cause=${cause} effect=${effect} msg="${msg}"`);
     }
 
-    // Keep only unplanned, service-impacting alerts.
+    // Keep only unplanned, service-impacting alerts that are active right now.
     // Exclude:
-    //   - MAINTENANCE (9) and CONSTRUCTION (10): planned work the MTA schedules
-    //     in advance — weekend diversions, track work, etc.
+    //   - MAINTENANCE (9) and CONSTRUCTION (10): planned work scheduled in
+    //     advance — weekend diversions, track work, etc.
     //   - NO_EFFECT (10): informational notices with no real service impact.
     const { Cause, Effect } = transit_realtime.Alert;
     const PLANNED_CAUSES = new Set([Cause.MAINTENANCE, Cause.CONSTRUCTION]);
 
+    // The MTA feed is not a snapshot of current alerts — it includes past
+    // alerts that have already ended AND future alerts that haven't started
+    // yet, all mixed in with currently-active ones. We must compare each
+    // alert's active_period windows against the current Unix timestamp and
+    // drop any alert where *none* of its windows include right now.
     const nowSec = Math.floor(Date.now() / 1000);
 
     const lAlerts: Alert[] = allLEntities
       .filter((e) => {
         if (PLANNED_CAUSES.has(e.alert?.cause as number)) return false;
         if (e.alert?.effect === Effect.NO_EFFECT)          return false;
-        // Drop alerts whose active_period window doesn't include right now.
+
         const periods = e.alert?.activePeriod;
         if (periods && periods.length > 0) {
-          const active = periods.some((p) => {
+          const currentlyActive = periods.some((p) => {
             const start = p.start ? Number(p.start) : 0;
             const end   = p.end   ? Number(p.end)   : Infinity;
             return nowSec >= start && nowSec <= end;
           });
-          if (!active) return false;
+          if (!currentlyActive) return false;
         }
+
         return true;
       })
       .map((e) => ({
         id: e.id,
-        message:
-          e.alert?.headerText?.translation?.[0]?.text ?? "Service alert",
+        message: e.alert?.headerText?.translation?.[0]?.text ?? "Service alert",
       }));
 
-    console.log(`[MTA] ${lAlerts.length} unplanned L alert(s) after filtering`);
+    console.log(`[MTA] ${lAlerts.length} active unplanned L alert(s) after filtering`);
 
-    // Decide the overall status based on how many unplanned alerts remain.
-    // KINDA is reserved for the error fallback only (can't reach MTA feed).
-    const count = lAlerts.length;
-    const status: Status = count === 0 ? "NOPE" : "YES";
+    const status: Status = lAlerts.length === 0 ? "NOPE" : "YES";
+    const funFact = FUN_FACTS[Math.floor(Math.random() * FUN_FACTS.length)];
 
-    // Pick a random fun fact (only shown when status is NOPE).
-    const funFact =
-      FUN_FACTS[Math.floor(Math.random() * FUN_FACTS.length)];
-
-    return {
+    const result: TrainStatus = {
       status,
       alerts: lAlerts,
       lastUpdated: new Date().toLocaleTimeString("en-US", {
@@ -151,14 +164,25 @@ async function getLTrainStatus(): Promise<TrainStatus> {
       }),
       funFact,
     };
+
+    // Store in cache for the next 60 seconds.
+    _cache = { data: result, expiresAt: Date.now() + CACHE_TTL_MS };
+    return result;
+
   } catch (err) {
-    // Log the full error so you can read it in the terminal where `npm run dev` is running.
+    // Log the full error so you can read it in the terminal.
     // It will say something like "HTTP 403 Forbidden" or "fetch failed: <network reason>".
     console.error("[MTA fetch error]", err instanceof Error ? err.message : err);
+
+    // Don't cache error responses — let the next request try the API again.
     return {
       status: "KINDA",
       alerts: [{ id: "err", message: "Couldn't reach the MTA feed. Classic." }],
-      lastUpdated: "unknown",
+      lastUpdated: new Date().toLocaleTimeString("en-US", {
+        timeZone: "America/New_York",
+        hour: "numeric",
+        minute: "2-digit",
+      }),
       funFact: "",
     };
   }
