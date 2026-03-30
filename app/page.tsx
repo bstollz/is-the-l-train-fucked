@@ -71,30 +71,91 @@ const CACHE_TTL_MS = 60_000;
 let _cache: { data: TrainStatus; expiresAt: number } | null = null;
 
 // ---------------------------------------------------------------------------
-// Reddit fetching
+// Reddit OAuth — client_credentials flow
 // ---------------------------------------------------------------------------
+// www.reddit.com blocks requests from Vercel's shared IP ranges and returns
+// HTML instead of JSON. The official OAuth API at oauth.reddit.com does not
+// have this restriction. We use a "script"-type Reddit app with the
+// client_credentials grant — no user login required.
+//
+// Required env vars (set in Vercel dashboard → Settings → Environment Variables):
+//   REDDIT_CLIENT_ID     — the app's client ID (shown under the app name)
+//   REDDIT_CLIENT_SECRET — the app's secret
+//
+// Tokens are valid for 24 hours; we cache them module-level so we only
+// re-authenticate when the token actually expires.
+
+const USER_AGENT = "web:is-the-l-train-fucked:v1.0 (by /u/your-reddit-username)";
+
+let _redditToken: { token: string; expiresAt: number } | null = null;
+
+async function getRedditToken(): Promise<string | null> {
+  if (_redditToken && Date.now() < _redditToken.expiresAt) {
+    return _redditToken.token;
+  }
+
+  const clientId     = process.env.REDDIT_CLIENT_ID;
+  const clientSecret = process.env.REDDIT_CLIENT_SECRET;
+
+  if (!clientId || !clientSecret) {
+    console.error("[Reddit] REDDIT_CLIENT_ID or REDDIT_CLIENT_SECRET not set");
+    return null;
+  }
+
+  try {
+    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
+    const res = await fetch("https://www.reddit.com/api/v1/access_token", {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${credentials}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": USER_AGENT,
+      },
+      body: "grant_type=client_credentials",
+    });
+
+    if (!res.ok) {
+      console.error(`[Reddit] token request failed: HTTP ${res.status}`);
+      return null;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const json = await res.json() as any;
+    const token: string = json.access_token;
+    // expires_in is in seconds; subtract a 60s buffer to refresh before expiry
+    const expiresAt = Date.now() + (json.expires_in - 60) * 1000;
+    _redditToken = { token, expiresAt };
+    console.log("[Reddit] obtained new OAuth token");
+    return token;
+  } catch (err) {
+    console.error("[Reddit] token exception:", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
 
 async function fetchRedditSection(
-  url: string,
+  path: string,
   label: string,
   limit: number
 ): Promise<RedditSection> {
+  const token = await getRedditToken();
+  if (!token) return { label, posts: [] };
+
   try {
+    const url = `https://oauth.reddit.com${path}`;
     const res = await fetch(url, {
-      headers: { "User-Agent": "is-the-l-train-fucked/1.0" },
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "User-Agent": USER_AGENT,
+      },
     });
-    console.log(`[Reddit] ${label}: HTTP ${res.status} ${res.statusText}`);
     if (!res.ok) {
-      const body = await res.text();
-      console.error(`[Reddit] ${label}: error body: ${body.slice(0, 500)}`);
+      console.error(`[Reddit] ${label}: HTTP ${res.status}`);
       return { label, posts: [] };
     }
-    const rawText = await res.text();
-    console.log(`[Reddit] ${label}: response length=${rawText.length} preview=${rawText.slice(0, 200)}`);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const json = JSON.parse(rawText) as any;
+    const json = await res.json() as any;
     const children = json?.data?.children ?? [];
-    console.log(`[Reddit] ${label}: ${children.length} posts in feed`);
     const posts: RedditPost[] = children.slice(0, limit).map(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (child: any) => ({
@@ -114,26 +175,10 @@ async function fetchRedditSection(
 
 async function getRedditSections(): Promise<RedditSection[]> {
   const [bushwick, williamsburg, ridgewood, lTrain] = await Promise.all([
-    fetchRedditSection(
-      "https://www.reddit.com/r/Bushwick/hot.json?limit=3",
-      "r/Bushwick",
-      3
-    ),
-    fetchRedditSection(
-      "https://www.reddit.com/r/williamsburg/hot.json?limit=3",
-      "r/williamsburg",
-      3
-    ),
-    fetchRedditSection(
-      "https://www.reddit.com/r/ridgewood/hot.json?limit=3",
-      "r/ridgewood",
-      3
-    ),
-    fetchRedditSection(
-      "https://www.reddit.com/search.json?q=L+train&sort=new&limit=5",
-      "L train mentions",
-      5
-    ),
+    fetchRedditSection("/r/Bushwick/hot.json?limit=3",       "r/Bushwick",       3),
+    fetchRedditSection("/r/williamsburg/hot.json?limit=3",   "r/williamsburg",   3),
+    fetchRedditSection("/r/ridgewood/hot.json?limit=3",      "r/ridgewood",      3),
+    fetchRedditSection("/search.json?q=L+train&sort=new&limit=5", "L train mentions", 5),
   ]);
   return [bushwick, williamsburg, ridgewood, lTrain];
 }
