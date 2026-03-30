@@ -31,6 +31,7 @@ type Status = "YES" | "KINDA" | "NOPE";
 interface Alert {
   id: string;
   message: string;
+  description: string | null;
 }
 
 interface TrainStatus {
@@ -147,6 +148,7 @@ async function getLTrainStatus(): Promise<TrainStatus> {
       .map((e) => ({
         id: e.id,
         message: e.alert?.headerText?.translation?.[0]?.text ?? "Service alert",
+        description: e.alert?.descriptionText?.translation?.[0]?.text ?? null,
       }));
 
     console.log(`[MTA] ${lAlerts.length} active unplanned L alert(s) after filtering`);
@@ -371,11 +373,24 @@ export default async function Home() {
                 style={{
                   padding: "0.75rem 0",
                   borderBottom: "1px solid rgba(255,255,255,0.2)",
-                  fontSize: "0.9rem",
-                  lineHeight: 1.5,
                 }}
               >
-                {alert.message}
+                <div style={{ fontSize: "0.9rem", fontWeight: "bold", lineHeight: 1.5 }}>
+                  {alert.message}
+                </div>
+                {alert.description && (
+                  <div
+                    style={{
+                      marginTop: "0.35rem",
+                      fontSize: "0.8rem",
+                      lineHeight: 1.6,
+                      opacity: 0.75,
+                      fontWeight: "normal",
+                    }}
+                  >
+                    {alert.description}
+                  </div>
+                )}
               </li>
             ))}
           </ul>
