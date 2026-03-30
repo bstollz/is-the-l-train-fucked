@@ -179,7 +179,7 @@ async function getLTrainStatus(): Promise<TrainStatus> {
     // Don't cache error responses — let the next request try the API again.
     return {
       status: "KINDA",
-      alerts: [{ id: "err", message: "Couldn't reach the MTA feed. Classic." }],
+      alerts: [{ id: "err", message: "Couldn't reach the MTA feed. Classic.", description: null }],
       lastUpdated: new Date().toLocaleTimeString("en-US", {
         timeZone: "America/New_York",
         hour: "numeric",
