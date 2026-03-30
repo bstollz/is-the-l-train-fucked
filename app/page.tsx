@@ -83,10 +83,18 @@ async function fetchRedditSection(
     const res = await fetch(url, {
       headers: { "User-Agent": "is-the-l-train-fucked/1.0" },
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    console.log(`[Reddit] ${label}: HTTP ${res.status} ${res.statusText}`);
+    if (!res.ok) {
+      const body = await res.text();
+      console.error(`[Reddit] ${label}: error body: ${body.slice(0, 500)}`);
+      return { label, posts: [] };
+    }
+    const rawText = await res.text();
+    console.log(`[Reddit] ${label}: response length=${rawText.length} preview=${rawText.slice(0, 200)}`);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const json = await res.json() as any;
+    const json = JSON.parse(rawText) as any;
     const children = json?.data?.children ?? [];
+    console.log(`[Reddit] ${label}: ${children.length} posts in feed`);
     const posts: RedditPost[] = children.slice(0, limit).map(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (child: any) => ({
@@ -98,7 +106,8 @@ async function fetchRedditSection(
       })
     );
     return { label, posts };
-  } catch {
+  } catch (err) {
+    console.error(`[Reddit] ${label}: exception: ${err instanceof Error ? err.message : err}`);
     return { label, posts: [] };
   }
 }
