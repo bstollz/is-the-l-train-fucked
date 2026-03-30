@@ -41,6 +41,19 @@ interface TrainStatus {
   funFact: string;      // random fact, shown only when status is NOPE
 }
 
+interface RedditPost {
+  id: string;
+  title: string;
+  subreddit: string;
+  score: number;
+  permalink: string;  // relative path — prefix with https://reddit.com
+}
+
+interface RedditSection {
+  label: string;      // display heading, e.g. "r/Bushwick"
+  posts: RedditPost[];
+}
+
 // ---------------------------------------------------------------------------
 // Server-side in-memory cache — 60-second TTL
 // ---------------------------------------------------------------------------
@@ -56,6 +69,65 @@ interface TrainStatus {
 // cache. It still dramatically reduces MTA API traffic during traffic spikes.
 const CACHE_TTL_MS = 60_000;
 let _cache: { data: TrainStatus; expiresAt: number } | null = null;
+
+// ---------------------------------------------------------------------------
+// Reddit fetching
+// ---------------------------------------------------------------------------
+
+async function fetchRedditSection(
+  url: string,
+  label: string,
+  limit: number
+): Promise<RedditSection> {
+  try {
+    const res = await fetch(url, {
+      headers: { "User-Agent": "is-the-l-train-fucked/1.0" },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const json = await res.json() as any;
+    const children = json?.data?.children ?? [];
+    const posts: RedditPost[] = children.slice(0, limit).map(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (child: any) => ({
+        id: child.data.id,
+        title: child.data.title,
+        subreddit: child.data.subreddit,
+        score: child.data.score,
+        permalink: child.data.permalink,
+      })
+    );
+    return { label, posts };
+  } catch {
+    return { label, posts: [] };
+  }
+}
+
+async function getRedditSections(): Promise<RedditSection[]> {
+  const [bushwick, williamsburg, ridgewood, lTrain] = await Promise.all([
+    fetchRedditSection(
+      "https://www.reddit.com/r/Bushwick/hot.json?limit=3",
+      "r/Bushwick",
+      3
+    ),
+    fetchRedditSection(
+      "https://www.reddit.com/r/williamsburg/hot.json?limit=3",
+      "r/williamsburg",
+      3
+    ),
+    fetchRedditSection(
+      "https://www.reddit.com/r/ridgewood/hot.json?limit=3",
+      "r/ridgewood",
+      3
+    ),
+    fetchRedditSection(
+      "https://www.reddit.com/search.json?q=L+train&sort=new&limit=5",
+      "L train mentions",
+      5
+    ),
+  ]);
+  return [bushwick, williamsburg, ridgewood, lTrain];
+}
 
 // ---------------------------------------------------------------------------
 // Data fetching — runs on the server, never exposed to the browser
@@ -225,8 +297,9 @@ const STATUS_STYLES: Record<
 // ---------------------------------------------------------------------------
 
 export default async function Home() {
-  // Fetch live data when the page loads.
-  const { status, alerts, lastUpdated, funFact } = await getLTrainStatus();
+  // Fetch MTA and Reddit data in parallel.
+  const [{ status, alerts, lastUpdated, funFact }, redditSections] =
+    await Promise.all([getLTrainStatus(), getRedditSections()]);
 
   // Get the visual config for the current status.
   const style = STATUS_STYLES[status];
@@ -394,6 +467,97 @@ export default async function Home() {
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {/* Reddit sections */}
+      {redditSections.some((s) => s.posts.length > 0) && (
+        <div
+          style={{
+            marginTop: "3rem",
+            width: "100%",
+            maxWidth: "700px",
+          }}
+        >
+          <h2
+            style={{
+              fontSize: "0.75rem",
+              textTransform: "uppercase",
+              letterSpacing: "0.15em",
+              opacity: 0.7,
+              marginBottom: "1.5rem",
+            }}
+          >
+            What the neighborhood is saying
+          </h2>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+              gap: "1.5rem",
+            }}
+          >
+            {redditSections.map((section) =>
+              section.posts.length === 0 ? null : (
+                <div key={section.label}>
+                  <h3
+                    style={{
+                      fontSize: "0.7rem",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.12em",
+                      opacity: 0.6,
+                      marginBottom: "0.6rem",
+                    }}
+                  >
+                    {section.label}
+                  </h3>
+                  <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+                    {section.posts.map((post) => (
+                      <li
+                        key={post.id}
+                        style={{
+                          marginBottom: "0.6rem",
+                          padding: "0.6rem 0.75rem",
+                          backgroundColor: "rgba(0,0,0,0.2)",
+                          borderRadius: "0.4rem",
+                        }}
+                      >
+                        <a
+                          href={`https://reddit.com${post.permalink}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            color: "inherit",
+                            textDecoration: "none",
+                            display: "block",
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize: "0.82rem",
+                              fontWeight: "bold",
+                              lineHeight: 1.4,
+                              marginBottom: "0.3rem",
+                            }}
+                          >
+                            {post.title}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: "0.7rem",
+                              opacity: 0.6,
+                            }}
+                          >
+                            r/{post.subreddit} · ▲ {post.score.toLocaleString()}
+                          </div>
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )
+            )}
+          </div>
         </div>
       )}
 
