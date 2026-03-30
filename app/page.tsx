@@ -106,10 +106,22 @@ async function getLTrainStatus(): Promise<TrainStatus> {
     const { Cause, Effect } = transit_realtime.Alert;
     const PLANNED_CAUSES = new Set([Cause.MAINTENANCE, Cause.CONSTRUCTION]);
 
+    const nowSec = Math.floor(Date.now() / 1000);
+
     const lAlerts: Alert[] = allLEntities
       .filter((e) => {
         if (PLANNED_CAUSES.has(e.alert?.cause as number)) return false;
         if (e.alert?.effect === Effect.NO_EFFECT)          return false;
+        // Drop alerts whose active_period window doesn't include right now.
+        const periods = e.alert?.activePeriod;
+        if (periods && periods.length > 0) {
+          const active = periods.some((p) => {
+            const start = p.start ? Number(p.start) : 0;
+            const end   = p.end   ? Number(p.end)   : Infinity;
+            return nowSec >= start && nowSec <= end;
+          });
+          if (!active) return false;
+        }
         return true;
       })
       .map((e) => ({
