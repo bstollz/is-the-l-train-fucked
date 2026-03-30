@@ -17,6 +17,8 @@
 import { transit_realtime } from "gtfs-realtime-bindings";
 import { FUN_FACTS } from "./lib/funFacts";
 
+export const dynamic = "force-dynamic";
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
