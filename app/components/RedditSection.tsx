@@ -69,7 +69,21 @@ export default function RedditSection({ textColor }: Props) {
   }, []);
 
   const allLoaded  = sections.every((s) => s.posts !== null);
-  const anyResults = sections.some((s) => s.posts && s.posts.length > 0);
+
+  // Deduplicate by title across sections: the first section a title appears in
+  // keeps it; subsequent sections have it removed. This runs on every render
+  // but is cheap — total posts across all sections is at most ~14.
+  const seenTitles = new Set<string>();
+  const dedupedSections = sections.map((s) => ({
+    ...s,
+    posts: (s.posts ?? []).filter((p) => {
+      if (seenTitles.has(p.title)) return false;
+      seenTitles.add(p.title);
+      return true;
+    }),
+  }));
+
+  const anyResults = dedupedSections.some((s) => s.posts.length > 0);
 
   // While loading, show a subtle placeholder so the section doesn't pop in.
   if (!allLoaded && !anyResults) {
@@ -103,7 +117,7 @@ export default function RedditSection({ textColor }: Props) {
           gap: "1.5rem",
         }}
       >
-        {sections.map((section) => {
+        {dedupedSections.map((section) => {
           if (!section.posts || section.posts.length === 0) return null;
           return (
             <div key={section.label}>
