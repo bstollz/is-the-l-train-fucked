@@ -22,10 +22,10 @@ interface Section {
 }
 
 const SECTIONS: Omit<Section, "posts">[] = [
-  { label: "r/Bushwick",       url: "https://www.reddit.com/r/Bushwick/hot.json?limit=3",       limit: 3 },
-  { label: "r/williamsburg",   url: "https://www.reddit.com/r/williamsburg/hot.json?limit=3",   limit: 3 },
-  { label: "r/ridgewood",      url: "https://www.reddit.com/r/ridgewood/hot.json?limit=3",      limit: 3 },
   { label: "L train mentions", url: "https://www.reddit.com/search.json?q=%22L+train%22+%28NYC+OR+Brooklyn+OR+MTA+OR+Williamsburg+OR+subway%29&sort=new&limit=5", limit: 5 },
+  { label: "r/Bushwick",       url: "https://www.reddit.com/r/Bushwick/search.json?q=L+train+OR+happening+OR+event+OR+neighborhood+OR+commute+OR+MTA&sort=new&limit=3&restrict_sr=1",     limit: 3 },
+  { label: "r/ridgewood",      url: "https://www.reddit.com/r/ridgewood/search.json?q=L+train+OR+happening+OR+event+OR+neighborhood+OR+commute+OR+MTA&sort=new&limit=3&restrict_sr=1",    limit: 3 },
+  { label: "r/williamsburg",   url: "https://www.reddit.com/r/williamsburg/search.json?q=L+train+OR+happening+OR+event+OR+neighborhood+OR+commute+OR+MTA&sort=new&limit=3&restrict_sr=1", limit: 3 },
 ];
 
 async function fetchSection(url: string, limit: number): Promise<RedditPost[]> {
