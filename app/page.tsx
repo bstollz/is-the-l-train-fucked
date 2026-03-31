@@ -17,6 +17,7 @@
 import { transit_realtime } from "gtfs-realtime-bindings";
 import { FUN_FACTS } from "./lib/funFacts";
 import RedditSection from "./components/RedditSection";
+import LTrainMagazine from "./components/LTrainMagazine";
 
 // force-dynamic ensures Next.js never statically renders this page at build
 // time. Every request runs this file fresh on the server, so users are never
@@ -231,6 +232,12 @@ export default async function Home() {
   // Get the visual config for the current status.
   const style = STATUS_STYLES[status];
 
+  const tweetText =
+    status === "NOPE"
+      ? "The L train is NOT fucked right now 🚇 ltrain.wtf #LTrainWTF"
+      : "The L train is fucked right now 🚇 ltrain.wtf #LTrainWTF";
+  const tweetUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(tweetText)}`;
+
   // For YES with only 1-2 alerts, use a softer subheading.
   const subheading =
     status === "YES" && alerts.length <= 2
@@ -326,6 +333,28 @@ export default async function Home() {
         {subheading}
       </p>
 
+      {/* Share button */}
+      <a
+        href={tweetUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{
+          marginTop: "1.5rem",
+          display: "inline-block",
+          padding: "0.4rem 1rem",
+          border: "1px solid rgba(255,255,255,0.4)",
+          borderRadius: "0.3rem",
+          fontSize: "0.75rem",
+          fontFamily: "monospace",
+          letterSpacing: "0.08em",
+          color: "inherit",
+          textDecoration: "none",
+          opacity: 0.7,
+        }}
+      >
+        share on x/twitter
+      </a>
+
       {/* Fun fact — only shows when everything is fine */}
       {status === "NOPE" && funFact && (
         <div
@@ -399,6 +428,9 @@ export default async function Home() {
 
       {/* Reddit posts — fetched client-side to avoid Vercel IP blocks */}
       <RedditSection textColor={style.textColor} />
+
+      {/* L Train Magazine — fetched client-side from RSS via rss2json */}
+      <LTrainMagazine textColor={style.textColor} />
 
       {/* Timestamp footer */}
       <p
