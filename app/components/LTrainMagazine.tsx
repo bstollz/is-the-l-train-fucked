@@ -8,17 +8,47 @@ interface Article {
 }
 
 async function fetchArticles(): Promise<Article[]> {
-  const res = await fetch(
-    "https://api.rss2json.com/v1/api.json?rss_url=https://ltrainmag.com/feed/"
-  );
-  if (!res.ok) return [];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const json = await res.json() as any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (json?.items ?? []).slice(0, 4).map((item: any) => ({
-    title: item.title,
-    link: item.link,
-  }));
+  // Step 1: try rss2json as a convenience proxy
+  console.log("[LTrainMagazine] fetching via rss2json...");
+  try {
+    const rss2jsonUrl = "https://api.rss2json.com/v1/api.json?rss_url=https://ltrainmag.com/feed/";
+    const res = await fetch(rss2jsonUrl);
+    console.log("[LTrainMagazine] rss2json HTTP", res.status);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const json = await res.json() as any;
+    console.log("[LTrainMagazine] rss2json response:", JSON.stringify(json).slice(0, 300));
+    if (json?.status === "ok" && json?.items?.length) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return json.items.slice(0, 4).map((item: any) => ({
+        title: item.title,
+        link: item.link,
+      }));
+    }
+    console.warn("[LTrainMagazine] rss2json returned no items, falling back to direct fetch");
+  } catch (err) {
+    console.error("[LTrainMagazine] rss2json exception:", err);
+  }
+
+  // Step 2: fetch the raw RSS XML directly and parse it
+  console.log("[LTrainMagazine] fetching raw feed at https://ltrainmag.com/feed/...");
+  try {
+    const res = await fetch("https://ltrainmag.com/feed/");
+    console.log("[LTrainMagazine] raw feed HTTP", res.status);
+    const xml = await res.text();
+    console.log("[LTrainMagazine] raw feed preview:", xml.slice(0, 300));
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(xml, "text/xml");
+    const items = Array.from(doc.querySelectorAll("item")).slice(0, 4);
+    console.log("[LTrainMagazine] parsed", items.length, "items from XML");
+    return items.map((item) => ({
+      title: item.querySelector("title")?.textContent ?? "(no title)",
+      link:  item.querySelector("link")?.textContent ?? "#",
+    }));
+  } catch (err) {
+    console.error("[LTrainMagazine] raw feed exception:", err);
+  }
+
+  return [];
 }
 
 interface Props {

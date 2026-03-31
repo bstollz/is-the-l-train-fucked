@@ -333,27 +333,45 @@ export default async function Home() {
         {subheading}
       </p>
 
-      {/* Share button */}
-      <a
-        href={tweetUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        style={{
-          marginTop: "1.5rem",
-          display: "inline-block",
-          padding: "0.4rem 1rem",
-          border: "1px solid rgba(255,255,255,0.4)",
-          borderRadius: "0.3rem",
-          fontSize: "0.75rem",
-          fontFamily: "monospace",
-          letterSpacing: "0.08em",
-          color: "inherit",
-          textDecoration: "none",
-          opacity: 0.7,
-        }}
-      >
-        share on x/twitter
-      </a>
+      {/* Share buttons */}
+      <div style={{ display: "flex", gap: "0.75rem", marginTop: "1.5rem" }}>
+        <a
+          href={tweetUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            display: "inline-block",
+            padding: "0.4rem 1rem",
+            border: "1px solid rgba(255,255,255,0.4)",
+            borderRadius: "0.3rem",
+            fontSize: "0.75rem",
+            fontFamily: "monospace",
+            letterSpacing: "0.08em",
+            color: "inherit",
+            textDecoration: "none",
+            opacity: 0.7,
+          }}
+        >
+          share on x/twitter
+        </a>
+        <a
+          href={`sms:?&body=${encodeURIComponent(tweetText)}`}
+          style={{
+            display: "inline-block",
+            padding: "0.4rem 1rem",
+            border: "1px solid rgba(255,255,255,0.4)",
+            borderRadius: "0.3rem",
+            fontSize: "0.75rem",
+            fontFamily: "monospace",
+            letterSpacing: "0.08em",
+            color: "inherit",
+            textDecoration: "none",
+            opacity: 0.7,
+          }}
+        >
+          share via sms
+        </a>
+      </div>
 
       {/* Fun fact — only shows when everything is fine */}
       {status === "NOPE" && funFact && (
