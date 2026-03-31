@@ -444,11 +444,11 @@ export default async function Home() {
         </div>
       )}
 
-      {/* Reddit posts — fetched client-side to avoid Vercel IP blocks */}
-      <RedditSection textColor={style.textColor} />
-
       {/* L Train Magazine — fetched client-side from RSS via rss2json */}
       <LTrainMagazine textColor={style.textColor} />
+
+      {/* Reddit posts — fetched client-side to avoid Vercel IP blocks */}
+      <RedditSection textColor={style.textColor} />
 
       {/* Timestamp footer */}
       <p
