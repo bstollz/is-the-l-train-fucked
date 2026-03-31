@@ -7,21 +7,33 @@ interface Article {
   link: string;
 }
 
-const L_TRAIN_RE = /l[\s-]train/i;
+interface Source {
+  label: string;
+  articles: Article[] | null; // null = loading
+}
 
-async function fetchArticles(): Promise<Article[]> {
-  const res = await fetch(
-    "https://api.rss2json.com/v1/api.json?rss_url=https://www.bkmag.com/feed/"
-  );
+const BK_RE = /bushwick|williamsburg|ridgewood|l[\s-]train/i;
+
+async function fetchRss2json(url: string): Promise<{ title: string; description: string; link: string }[]> {
+  const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}`);
   if (!res.ok) return [];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const json = await res.json() as any;
   if (json?.status !== "ok") return [];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (json.items as any[])
-    .filter((item) => L_TRAIN_RE.test(item.title) || L_TRAIN_RE.test(item.description ?? ""))
-    .slice(0, 4)
+  return json.items ?? [];
+}
+
+async function fetchBkMag(): Promise<Article[]> {
+  const items = await fetchRss2json("https://www.bkmag.com/feed/");
+  return items
+    .filter((item) => BK_RE.test(item.title) || BK_RE.test(item.description ?? ""))
+    .slice(0, 3)
     .map((item) => ({ title: item.title, link: item.link }));
+}
+
+async function fetchBushwickDaily(): Promise<Article[]> {
+  const items = await fetchRss2json("https://bushwickdaily.com/feed/");
+  return items.slice(0, 3).map((item) => ({ title: item.title, link: item.link }));
 }
 
 interface Props {
@@ -29,54 +41,73 @@ interface Props {
 }
 
 export default function LTrainMagazine({ textColor }: Props) {
-  const [articles, setArticles] = useState<Article[] | null>(null);
+  const [sources, setSources] = useState<Source[]>([
+    { label: "Brooklyn Magazine", articles: null },
+    { label: "Bushwick Daily",    articles: null },
+  ]);
 
   useEffect(() => {
-    fetchArticles()
-      .then(setArticles)
-      .catch(() => setArticles([]));
+    fetchBkMag()
+      .then((articles) => setSources((prev) => prev.map((s, i) => i === 0 ? { ...s, articles } : s)))
+      .catch(()         => setSources((prev) => prev.map((s, i) => i === 0 ? { ...s, articles: [] } : s)));
+
+    fetchBushwickDaily()
+      .then((articles) => setSources((prev) => prev.map((s, i) => i === 1 ? { ...s, articles } : s)))
+      .catch(()         => setSources((prev) => prev.map((s, i) => i === 1 ? { ...s, articles: [] } : s)));
   }, []);
 
-  // null = still loading; hide silently
-  if (!articles || articles.length === 0) return null;
+  const visibleSources = sources.filter((s) => s.articles && s.articles.length > 0);
+  if (visibleSources.length === 0) return null;
 
   return (
     <div style={{ marginTop: "3rem", width: "100%", maxWidth: "700px", color: textColor }}>
-      <h2
+      <div
         style={{
-          fontSize: "0.75rem",
-          textTransform: "uppercase",
-          letterSpacing: "0.15em",
-          opacity: 0.7,
-          margin: "0 0 1rem 0",
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+          gap: "1.5rem",
         }}
       >
-        From Brooklyn Magazine
-      </h2>
-      <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-        {articles.map((article) => (
-          <li
-            key={article.link}
-            style={{
-              marginBottom: "0.6rem",
-              padding: "0.6rem 0.75rem",
-              backgroundColor: "rgba(0,0,0,0.2)",
-              borderRadius: "0.4rem",
-            }}
-          >
-            <a
-              href={article.link}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ color: "inherit", textDecoration: "none", display: "block" }}
+        {visibleSources.map((source) => (
+          <div key={source.label}>
+            <h3
+              style={{
+                fontSize: "0.7rem",
+                textTransform: "uppercase",
+                letterSpacing: "0.12em",
+                opacity: 0.6,
+                margin: "0 0 0.6rem 0",
+              }}
             >
-              <div style={{ fontSize: "0.82rem", fontWeight: "bold", lineHeight: 1.4 }}>
-                {article.title}
-              </div>
-            </a>
-          </li>
+              {source.label}
+            </h3>
+            <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+              {source.articles!.map((article) => (
+                <li
+                  key={article.link}
+                  style={{
+                    marginBottom: "0.6rem",
+                    padding: "0.6rem 0.75rem",
+                    backgroundColor: "rgba(0,0,0,0.2)",
+                    borderRadius: "0.4rem",
+                  }}
+                >
+                  <a
+                    href={article.link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: "inherit", textDecoration: "none", display: "block" }}
+                  >
+                    <div style={{ fontSize: "0.82rem", fontWeight: "bold", lineHeight: 1.4 }}>
+                      {article.title}
+                    </div>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
         ))}
-      </ul>
+      </div>
     </div>
   );
 }
