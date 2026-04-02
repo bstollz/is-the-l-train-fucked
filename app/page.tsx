@@ -374,9 +374,6 @@ export default async function Home() {
         </a>
       </div>
 
-      {/* Weekly disruption tally */}
-      <TallyCounter textColor={style.textColor} />
-
       {/* Fun fact — only shows when everything is fine */}
       {status === "NOPE" && funFact && (
         <div
@@ -447,6 +444,9 @@ export default async function Home() {
           </ul>
         </div>
       )}
+
+      {/* Weekly disruption tally */}
+      <TallyCounter textColor={style.textColor} />
 
       {/* L Train Magazine — fetched client-side from RSS via rss2json */}
       <LTrainMagazine textColor={style.textColor} />
