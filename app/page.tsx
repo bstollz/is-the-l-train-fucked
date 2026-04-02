@@ -18,6 +18,7 @@ import { transit_realtime } from "gtfs-realtime-bindings";
 import { FUN_FACTS } from "./lib/funFacts";
 import RedditSection from "./components/RedditSection";
 import LTrainMagazine from "./components/LTrainMagazine";
+import TallyCounter from "./components/TallyCounter";
 
 // force-dynamic ensures Next.js never statically renders this page at build
 // time. Every request runs this file fresh on the server, so users are never
@@ -372,6 +373,9 @@ export default async function Home() {
           share via sms
         </a>
       </div>
+
+      {/* Weekly disruption tally */}
+      <TallyCounter textColor={style.textColor} />
 
       {/* Fun fact — only shows when everything is fine */}
       {status === "NOPE" && funFact && (
