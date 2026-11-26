@@ -1,46 +1,43 @@
 "use client";
 
-// Fetches Reddit posts in the browser, not on the server.
-// This sidesteps Reddit blocking Vercel's server IPs — requests come from
-// the user's own browser where Reddit's public JSON API works normally.
+// Reddit's public JSON API now returns 403 for unauthenticated requests (since
+// their 2023 API changes). This component was rewritten to use RSS feeds from
+// transit and Brooklyn-focused publications instead.
 
 import { useEffect, useState } from "react";
 
-interface RedditPost {
-  id: string;
+interface Article {
   title: string;
-  subreddit: string;
-  score: number;
-  permalink: string;
+  link: string;
 }
 
-interface Section {
+interface Source {
   label: string;
-  url: string;
-  limit: number;
-  posts: RedditPost[] | null; // null = still loading
+  articles: Article[] | null; // null = loading
 }
 
-const SECTIONS: Omit<Section, "posts">[] = [
-  { label: "L train mentions", url: "https://www.reddit.com/search.json?q=%22L+train%22+%28NYC+OR+Brooklyn+OR+MTA+OR+Williamsburg+OR+subway%29&sort=new&limit=5", limit: 5 },
-  { label: "r/Bushwick",       url: "https://www.reddit.com/r/Bushwick/search.json?q=L+train+OR+happening+OR+event+OR+neighborhood+OR+commute+OR+MTA&sort=new&limit=3&restrict_sr=1",     limit: 3 },
-  { label: "r/ridgewood",      url: "https://www.reddit.com/r/ridgewood/search.json?q=L+train+OR+happening+OR+event+OR+neighborhood+OR+commute+OR+MTA&sort=new&limit=3&restrict_sr=1",    limit: 3 },
-  { label: "r/williamsburg",   url: "https://www.reddit.com/r/williamsburg/search.json?q=L+train+OR+happening+OR+event+OR+neighborhood+OR+commute+OR+MTA&sort=new&limit=3&restrict_sr=1", limit: 3 },
-];
+const L_TRAIN_RE =
+  /l[\s-]train|mta|subway|bus|transit|bushwick|williamsburg|ridgewood|canarsie|bedford|lorimer|morgan av|jefferson|halsey|wilson|kosciuszko|broadway junction/i;
 
-async function fetchSection(url: string, limit: number): Promise<RedditPost[]> {
-  const res = await fetch(url, { headers: { Accept: "application/json" } });
-  if (!res.ok) return [];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const json = await res.json() as any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (json?.data?.children ?? []).slice(0, limit).map((c: any) => ({
-    id: c.data.id,
-    title: c.data.title,
-    subreddit: c.data.subreddit,
-    score: c.data.score,
-    permalink: c.data.permalink,
-  }));
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function fetchRss(feedUrl: string, filter?: RegExp): Promise<Article[]> {
+  try {
+    const res = await fetch(
+      `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feedUrl)}`
+    );
+    if (!res.ok) return [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const json = (await res.json()) as any;
+    if (json?.status !== "ok") return [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const items = (json.items ?? []) as { title: string; link: string; description?: string }[];
+    const filtered = filter
+      ? items.filter((item) => filter.test(item.title) || filter.test(item.description ?? ""))
+      : items;
+    return filtered.slice(0, 4).map((item) => ({ title: item.title, link: item.link }));
+  } catch {
+    return [];
+  }
 }
 
 interface Props {
@@ -48,53 +45,40 @@ interface Props {
 }
 
 export default function RedditSection({ textColor }: Props) {
-  const [sections, setSections] = useState<Section[]>(
-    SECTIONS.map((s) => ({ ...s, posts: null }))
-  );
+  const [sources, setSources] = useState<Source[]>([
+    { label: "Streetsblog NYC", articles: null },
+    { label: "Gothamist",       articles: null },
+    { label: "Brooklyn Paper",  articles: null },
+  ]);
 
   useEffect(() => {
-    SECTIONS.forEach((s, i) => {
-      fetchSection(s.url, s.limit)
-        .then((posts) =>
-          setSections((prev) =>
-            prev.map((sec, j) => (j === i ? { ...sec, posts } : sec))
-          )
-        )
-        .catch(() =>
-          setSections((prev) =>
-            prev.map((sec, j) => (j === i ? { ...sec, posts: [] } : sec))
-          )
-        );
-    });
+    // Streetsblog is all transit — show top articles without filtering
+    fetchRss("https://nyc.streetsblog.org/feed")
+      .then((articles) => setSources((prev) => prev.map((s, i) => i === 0 ? { ...s, articles } : s)))
+      .catch(()         => setSources((prev) => prev.map((s, i) => i === 0 ? { ...s, articles: [] } : s)));
+
+    // Gothamist and Brooklyn Paper — filter for L train / transit / neighborhood keywords
+    fetchRss("https://gothamist.com/feed", L_TRAIN_RE)
+      .then((articles) => setSources((prev) => prev.map((s, i) => i === 1 ? { ...s, articles } : s)))
+      .catch(()         => setSources((prev) => prev.map((s, i) => i === 1 ? { ...s, articles: [] } : s)));
+
+    fetchRss("https://brooklynpaper.com/feed/", L_TRAIN_RE)
+      .then((articles) => setSources((prev) => prev.map((s, i) => i === 2 ? { ...s, articles } : s)))
+      .catch(()         => setSources((prev) => prev.map((s, i) => i === 2 ? { ...s, articles: [] } : s)));
   }, []);
 
-  const allLoaded  = sections.every((s) => s.posts !== null);
+  const allLoaded     = sources.every((s) => s.articles !== null);
+  const visibleSources = sources.filter((s) => s.articles && s.articles.length > 0);
 
-  // Deduplicate by title across sections: the first section a title appears in
-  // keeps it; subsequent sections have it removed. This runs on every render
-  // but is cheap — total posts across all sections is at most ~14.
-  const seenTitles = new Set<string>();
-  const dedupedSections = sections.map((s) => ({
-    ...s,
-    posts: (s.posts ?? []).filter((p) => {
-      if (seenTitles.has(p.title)) return false;
-      seenTitles.add(p.title);
-      return true;
-    }),
-  }));
-
-  const anyResults = dedupedSections.some((s) => s.posts.length > 0);
-
-  // While loading, show a subtle placeholder so the section doesn't pop in.
-  if (!allLoaded && !anyResults) {
+  if (!allLoaded && visibleSources.length === 0) {
     return (
       <div style={{ marginTop: "3rem", width: "100%", maxWidth: "700px", opacity: 0.4, fontSize: "0.75rem", textAlign: "center" }}>
-        Loading neighborhood posts…
+        Loading neighborhood news…
       </div>
     );
   }
 
-  if (allLoaded && !anyResults) return null;
+  if (allLoaded && visibleSources.length === 0) return null;
 
   return (
     <div style={{ marginTop: "3rem", width: "100%", maxWidth: "700px", color: textColor }}>
@@ -104,11 +88,10 @@ export default function RedditSection({ textColor }: Props) {
           textTransform: "uppercase",
           letterSpacing: "0.15em",
           opacity: 0.7,
-          marginBottom: "1.5rem",
           margin: "0 0 1.5rem 0",
         } as React.CSSProperties}
       >
-        What the neighborhood is saying
+        What&apos;s happening in the neighborhood
       </h2>
       <div
         style={{
@@ -117,52 +100,45 @@ export default function RedditSection({ textColor }: Props) {
           gap: "1.5rem",
         }}
       >
-        {dedupedSections.map((section) => {
-          if (!section.posts || section.posts.length === 0) return null;
-          return (
-            <div key={section.label}>
-              <h3
-                style={{
-                  fontSize: "0.7rem",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.12em",
-                  opacity: 0.6,
-                  margin: 0,
-                  marginBottom: "0.6rem",
-                } as React.CSSProperties}
-              >
-                {section.label}
-              </h3>
-              <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-                {section.posts.map((post) => (
-                  <li
-                    key={post.id}
-                    style={{
-                      marginBottom: "0.6rem",
-                      padding: "0.6rem 0.75rem",
-                      backgroundColor: "rgba(0,0,0,0.2)",
-                      borderRadius: "0.4rem",
-                    }}
+        {visibleSources.map((source) => (
+          <div key={source.label}>
+            <h3
+              style={{
+                fontSize: "0.7rem",
+                textTransform: "uppercase",
+                letterSpacing: "0.12em",
+                opacity: 0.6,
+                margin: "0 0 0.6rem 0",
+              } as React.CSSProperties}
+            >
+              {source.label}
+            </h3>
+            <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+              {source.articles!.map((article) => (
+                <li
+                  key={article.link}
+                  style={{
+                    marginBottom: "0.6rem",
+                    padding: "0.6rem 0.75rem",
+                    backgroundColor: "rgba(0,0,0,0.2)",
+                    borderRadius: "0.4rem",
+                  }}
+                >
+                  <a
+                    href={article.link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: "inherit", textDecoration: "none", display: "block" }}
                   >
-                    <a
-                      href={`https://reddit.com${post.permalink}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ color: "inherit", textDecoration: "none", display: "block" }}
-                    >
-                      <div style={{ fontSize: "0.82rem", fontWeight: "bold", lineHeight: 1.4, marginBottom: "0.3rem" }}>
-                        {post.title}
-                      </div>
-                      <div style={{ fontSize: "0.7rem", opacity: 0.6 }}>
-                        r/{post.subreddit} · ▲ {post.score.toLocaleString()}
-                      </div>
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          );
-        })}
+                    <div style={{ fontSize: "0.82rem", fontWeight: "bold", lineHeight: 1.4 }}>
+                      {article.title}
+                    </div>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
       </div>
     </div>
   );
